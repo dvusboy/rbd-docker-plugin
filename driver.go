@@ -676,6 +676,39 @@ func (d *cephRBDVolumeDriver) parseImagePoolNameSize(fullname string) (string, s
 	return pool, imagename, size, nil
 }
 
+// This handles the support for `Options["SizeMB"]` to specify the size of the
+// rbd image. If the option is present in the request, it reformat the volume
+// name to add '@<size>' decoration at the end, overriding any existing sizing
+// decoration in the volume name.
+// In the case there is any error encountered, the original `Name` is returned
+// unmodified
+func (d *cephRBDVolumeDriver) reformatName(r dkvolume.Request) string {
+    matches := imageNameRegexp.FindStringSubmatch(r.Name)
+    if isDebugEnabled() {
+        log.Printf("DEBUG: reformatName: %q: %q", r.Name, matches)
+    }
+	if len(matches) != 6 {
+        return r.Name
+    }
+
+    size_in_mb, ok := r.Options["SizeMB"]
+    if !ok {
+	    return r.Name
+    }
+
+    if isDebugEnabled() {
+        log.Printf("DEBUG: Options[SizeMB] provided: %s", size_in_mb)
+    }
+    size, err := strconv.Atoi(size_in_mb)
+    if err != nil {
+        log.Printf("WARN: Ignoring Options[SizeMB] as %q is not an integer: %s", size_in_mb, err)
+    } else {
+        return fmt.Sprintf("%s%s@%d", matches[1], matches[3], size)
+    }
+    return r.Name
+}
+
+
 // rbdImageExists will check for an existing Ceph RBD Image
 func (d *cephRBDVolumeDriver) rbdImageExists(pool, findName string) (bool, error) {
 	log.Printf("INFO: rbdImageExists(%s/%s)", pool, findName)
